@@ -1,5 +1,4 @@
-
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import axios from "axios";
 import "./App.css";
 import PatientForm from "./components/PatientForm";
@@ -7,6 +6,30 @@ import PatientForm from "./components/PatientForm";
 const API = import.meta.env.VITE_API_URL || "http://127.0.0.1:5000";
 
 function App() {
+  // Navigation references
+  const dashboardRef = useRef(null);
+  const patientsRef = useRef(null);
+
+  const [activeMenu, setActiveMenu] = useState("Dashboard");
+
+  // Navigation functions
+  const handleDashboardClick = () => {
+    setActiveMenu("Dashboard");
+    dashboardRef.current?.scrollIntoView({
+      behavior: "smooth",
+      block: "start"
+    });
+  };
+
+  const handlePatientsClick = () => {
+    setActiveMenu("Patients");
+    patientsRef.current?.scrollIntoView({
+      behavior: "smooth",
+      block: "start"
+    });
+  };
+
+  // Patient states
   const [patients, setPatients] = useState([]);
 
   const [options, setOptions] = useState({
@@ -30,8 +53,12 @@ function App() {
   // Load dropdown options
   useEffect(() => {
     axios.get(`${API}/api/options`)
-      .then(response => setOptions(response.data))
-      .catch(() => setError("Could not load dropdown options."));
+      .then(response => {
+        setOptions(response.data);
+      })
+      .catch(() => {
+        setError("Could not load dropdown options.");
+      });
   }, []);
 
   // Load patients whenever search or filters change
@@ -181,11 +208,35 @@ function App() {
 
         <p className="menu-heading">MAIN MENU</p>
 
-        <div className="menu-item active">
+        {/* Dashboard Navigation */}
+        <div
+          className={`menu-item ${
+            activeMenu === "Dashboard" ? "active" : ""
+          }`}
+          onClick={handleDashboardClick}
+          role="button"
+          tabIndex={0}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") handleDashboardClick();
+          }}
+          style={{ cursor: "pointer" }}
+        >
           <span>▦</span> Dashboard
         </div>
 
-        <div className="menu-item">
+        {/* Patients Navigation */}
+        <div
+          className={`menu-item ${
+            activeMenu === "Patients" ? "active" : ""
+          }`}
+          onClick={handlePatientsClick}
+          role="button"
+          tabIndex={0}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") handlePatientsClick();
+          }}
+          style={{ cursor: "pointer" }}
+        >
           <span>♙</span> Patients
         </div>
 
@@ -199,7 +250,8 @@ function App() {
       {/* Main Content */}
       <main className="main-content">
 
-        <header className="topbar">
+        {/* Dashboard Header */}
+        <header className="topbar" ref={dashboardRef}>
 
           <div>
             <h2>Dashboard</h2>
@@ -217,7 +269,7 @@ function App() {
 
         </header>
 
-        {/* Statistics */}
+        {/* Dashboard Statistics */}
         <section className="stats-grid">
 
           <div className="stat-card">
@@ -241,7 +293,10 @@ function App() {
         </section>
 
         {/* Patient Management */}
-        <section className="patient-section">
+        <section
+          className="patient-section"
+          ref={patientsRef}
+        >
 
           <div className="section-header">
 
@@ -374,12 +429,14 @@ function App() {
                       <td>{patient.admission_date}</td>
 
                       <td>
-                        <span className={`status ${patient.status.toLowerCase()}`}>
+                        <span
+                          className={`status ${patient.status.toLowerCase()}`}
+                        >
                           {patient.status}
                         </span>
                       </td>
 
-                      {/* Actions */}
+                      {/* Patient Actions */}
                       <td>
                         <div className="action-buttons">
 
@@ -425,14 +482,12 @@ function App() {
 
         {/* Add / Edit Patient Form */}
         {showForm && (
-
           <PatientForm
             options={options}
             initialData={editingPatient}
             onClose={closePatientForm}
             onSave={savePatient}
           />
-
         )}
 
       </main>
