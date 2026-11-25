@@ -14,8 +14,18 @@ from validation import (
 app = Flask(__name__)
 CORS(app)
 
-# Create database table when backend starts
+# Create the patients table when the backend starts
 create_table()
+
+
+# Convert database patient data into JSON-friendly format
+def format_patient(patient):
+    result = dict(patient)
+
+    if result.get("admission_date"):
+        result["admission_date"] = result["admission_date"].isoformat()
+
+    return result
 
 
 # Home route
@@ -59,25 +69,29 @@ def add_patient():
 
     conn = get_db_connection()
 
-    cursor = conn.execute("""
-        INSERT INTO patients
-        (name, age, gender, ward, department, doctor,
-         admission_date, status)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    """, (
-        data["name"].strip(),
-        int(data["age"]),
-        data["gender"],
-        data["ward"],
-        data["department"],
-        data["doctor"],
-        data["admission_date"],
-        data.get("status", "Admitted")
-    ))
+    try:
+        cursor = conn.execute("""
+            INSERT INTO patients
+            (name, age, gender, ward, department, doctor,
+             admission_date, status)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            RETURNING id
+        """, (
+            data["name"].strip(),
+            int(data["age"]),
+            data["gender"],
+            data["ward"],
+            data["department"],
+            data["doctor"],
+            data["admission_date"],
+            data.get("status", "Admitted")
+        ))
 
-    conn.commit()
-    patient_id = cursor.lastrowid
-    conn.close()
+        patient_id = cursor.fetchone()["id"]
+        conn.commit()
+
+    finally:
+        conn.close()
 
     return jsonify({
         "success": True,
@@ -95,42 +109,59 @@ def get_patients():
     doctor = request.args.get("doctor", "").strip()
 
     if ward and ward not in WARDS:
-        return jsonify({"success": False, "message": "Invalid ward."}), 400
+        return jsonify({
+            "success": False,
+            "message": "Invalid ward."
+        }), 400
 
     if department and department not in DEPARTMENTS:
-        return jsonify({"success": False, "message": "Invalid department."}), 400
+        return jsonify({
+            "success": False,
+            "message": "Invalid department."
+        }), 400
 
     if doctor and doctor not in DOCTORS:
-        return jsonify({"success": False, "message": "Invalid doctor."}), 400
+        return jsonify({
+            "success": False,
+            "message": "Invalid doctor."
+        }), 400
 
     query = "SELECT * FROM patients WHERE 1=1"
     values = []
 
     if search:
-        query += " AND name LIKE ?"
+        query += " AND name ILIKE %s"
         values.append(f"%{search}%")
 
     if ward:
-        query += " AND ward = ?"
+        query += " AND ward = %s"
         values.append(ward)
 
     if department:
-        query += " AND department = ?"
+        query += " AND department = %s"
         values.append(department)
 
     if doctor:
-        query += " AND doctor = ?"
+        query += " AND doctor = %s"
         values.append(doctor)
 
     query += " ORDER BY id DESC"
 
     conn = get_db_connection()
-    patients = conn.execute(query, values).fetchall()
-    conn.close()
+
+    try:
+        patients = conn.execute(query, values).fetchall()
+
+        patient_list = [
+            format_patient(patient) for patient in patients
+        ]
+
+    finally:
+        conn.close()
 
     return jsonify({
         "success": True,
-        "patients": [dict(patient) for patient in patients]
+        "patients": patient_list
     })
 
 
@@ -139,12 +170,14 @@ def get_patients():
 def get_patient(patient_id):
     conn = get_db_connection()
 
-    patient = conn.execute(
-        "SELECT * FROM patients WHERE id = ?",
-        (patient_id,)
-    ).fetchone()
+    try:
+        patient = conn.execute(
+            "SELECT * FROM patients WHERE id = %s",
+            (patient_id,)
+        ).fetchone()
 
-    conn.close()
+    finally:
+        conn.close()
 
     if patient is None:
         return jsonify({
@@ -154,7 +187,7 @@ def get_patient(patient_id):
 
     return jsonify({
         "success": True,
-        "patient": dict(patient)
+        "patient": format_patient(patient)
     })
 
 
@@ -179,38 +212,41 @@ def update_patient(patient_id):
 
     conn = get_db_connection()
 
-    existing = conn.execute(
-        "SELECT id FROM patients WHERE id = ?",
-        (patient_id,)
-    ).fetchone()
+    try:
+        cursor = conn.execute("""
+            UPDATE patients
+            SET name = %s,
+                age = %s,
+                gender = %s,
+                ward = %s,
+                department = %s,
+                doctor = %s,
+                admission_date = %s,
+                status = %s
+            WHERE id = %s
+        """, (
+            data["name"].strip(),
+            int(data["age"]),
+            data["gender"],
+            data["ward"],
+            data["department"],
+            data["doctor"],
+            data["admission_date"],
+            data.get("status", "Admitted"),
+            patient_id
+        ))
 
-    if existing is None:
+        updated = cursor.rowcount
+        conn.commit()
+
+    finally:
         conn.close()
+
+    if updated == 0:
         return jsonify({
             "success": False,
             "message": "Patient not found."
         }), 404
-
-    conn.execute("""
-        UPDATE patients
-        SET name = ?, age = ?, gender = ?, ward = ?,
-            department = ?, doctor = ?, admission_date = ?,
-            status = ?
-        WHERE id = ?
-    """, (
-        data["name"].strip(),
-        int(data["age"]),
-        data["gender"],
-        data["ward"],
-        data["department"],
-        data["doctor"],
-        data["admission_date"],
-        data.get("status", "Admitted"),
-        patient_id
-    ))
-
-    conn.commit()
-    conn.close()
 
     return jsonify({
         "success": True,
@@ -223,14 +259,17 @@ def update_patient(patient_id):
 def delete_patient(patient_id):
     conn = get_db_connection()
 
-    cursor = conn.execute(
-        "DELETE FROM patients WHERE id = ?",
-        (patient_id,)
-    )
+    try:
+        cursor = conn.execute(
+            "DELETE FROM patients WHERE id = %s",
+            (patient_id,)
+        )
 
-    conn.commit()
-    deleted = cursor.rowcount
-    conn.close()
+        deleted = cursor.rowcount
+        conn.commit()
+
+    finally:
+        conn.close()
 
     if deleted == 0:
         return jsonify({
@@ -249,15 +288,18 @@ def delete_patient(patient_id):
 def discharge_patient(patient_id):
     conn = get_db_connection()
 
-    cursor = conn.execute("""
-        UPDATE patients
-        SET status = 'Discharged'
-        WHERE id = ? AND status = 'Admitted'
-    """, (patient_id,))
+    try:
+        cursor = conn.execute("""
+            UPDATE patients
+            SET status = 'Discharged'
+            WHERE id = %s AND status = 'Admitted'
+        """, (patient_id,))
 
-    conn.commit()
-    updated = cursor.rowcount
-    conn.close()
+        updated = cursor.rowcount
+        conn.commit()
+
+    finally:
+        conn.close()
 
     if updated == 0:
         return jsonify({
