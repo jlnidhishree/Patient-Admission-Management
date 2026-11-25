@@ -1,17 +1,21 @@
 
+import os
 import sqlite3
 from pathlib import Path
 
-# Database file location
 BASE_DIR = Path(__file__).resolve().parent
-DATABASE = BASE_DIR / "patients.db"
 
+# Use deployment storage when configured; otherwise use local database
+DATABASE = Path(
+    os.environ.get("DATABASE_PATH", str(BASE_DIR / "patients.db"))
+)
 
 def get_db_connection():
+    DATABASE.parent.mkdir(parents=True, exist_ok=True)
+
     conn = sqlite3.connect(DATABASE)
     conn.row_factory = sqlite3.Row
     return conn
-
 
 def create_table():
     conn = get_db_connection()
@@ -32,7 +36,6 @@ def create_table():
 
     conn.commit()
     conn.close()
-
 
 if __name__ == "__main__":
     create_table()
