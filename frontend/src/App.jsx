@@ -4,7 +4,7 @@ import axios from "axios";
 import "./App.css";
 import PatientForm from "./components/PatientForm";
 
-const API = "http://127.0.0.1:5000";
+const API = import.meta.env.VITE_API_URL || "http://127.0.0.1:5000";
 
 function App() {
   const [patients, setPatients] = useState([]);
